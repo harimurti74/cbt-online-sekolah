@@ -4,6 +4,27 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
 
 import streamlit as st
+st.markdown("""
+    <style>
+    /* Sembunyikan Header Atas & Menu Utama */
+    header, footer, #MainMenu, [data-testid="stHeader"] {
+        display: none !important;
+        visibility: hidden !important;
+    }
+    
+    /* Sembunyikan Badge, Tombol Deploy, & Floating Menu Kelola di Pojok Bawah */
+    div[data-testid="stAppDeployButton"],
+    div[data-testid="stStatusWidget"],
+    div[class*="viewerBadge"],
+    div[class*="styles_viewerBadge"],
+    .stAppDeployButton,
+    a[href*="streamlit.io"],
+    a[href*="streamlit.app"] {
+        display: none !important;
+        visibility: hidden !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
 import pandas as pd
 import numpy as np
 import json
