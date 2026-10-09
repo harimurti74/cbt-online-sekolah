@@ -4,6 +4,14 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
 
 import streamlit as st
+# Menyembunyikan header, menu titik tiga, dan footer Streamlit
+st.markdown("""
+    <style>
+    header {visibility: hidden;}
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    </style>
+""", unsafe_allow_html=True)
 import pandas as pd
 import numpy as np
 import json
