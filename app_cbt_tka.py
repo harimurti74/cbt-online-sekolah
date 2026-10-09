@@ -6,14 +6,23 @@ from googleapiclient.http import MediaIoBaseUpload
 import streamlit as st
 st.markdown("""
     <style>
-    /* Sembunyikan header, menu titik tiga, dan footer */
-    header {visibility: hidden;}
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
+    /* Sembunyikan Header Atas & Menu Utama */
+    header, footer, #MainMenu, [data-testid="stHeader"] {
+        display: none !important;
+        visibility: hidden !important;
+    }
     
-    /* Sembunyikan ikon badge & status Streamlit di pojok kanan bawah */
-    div[class*="viewerBadge"] {display: none !important;}
-    .stAppDeployButton {display: none !important;}
+    /* Sembunyikan Badge, Tombol Deploy, & Floating Menu Kelola di Pojok Bawah */
+    div[data-testid="stAppDeployButton"],
+    div[data-testid="stStatusWidget"],
+    div[class*="viewerBadge"],
+    div[class*="styles_viewerBadge"],
+    .stAppDeployButton,
+    a[href*="streamlit.io"],
+    a[href*="streamlit.app"] {
+        display: none !important;
+        visibility: hidden !important;
+    }
     </style>
 """, unsafe_allow_html=True)
 import pandas as pd
