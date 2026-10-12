@@ -10,6 +10,7 @@ import json
 import time
 import re
 import io
+import os
 import difflib
 import hashlib
 from datetime import datetime
@@ -26,19 +27,100 @@ st.set_page_config(
     page_title="Sistem Ujian Online CBT - TKA",
     page_icon="📝",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
-# HIDE STREAMLIT BRANDING, BADGE POJOK KANAN BAWAH ("Manage app"), & TOOLBAR
-st.markdown("""
+# ---------------------------------------------------------
+# PERSISTENT LOCAL FILE DATABASE (AGAR DATA TERSIMPAN BERHARI-HARI)
+# ---------------------------------------------------------
+DB_FILE = "cbt_persistent_db.json"
+
+def load_persistent_db():
+    if os.path.exists(DB_FILE):
+        try:
+            with open(DB_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+def save_persistent_db(db_data):
+    try:
+        with open(DB_FILE, "w", encoding="utf-8") as f:
+            json.dump(db_data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print("Save error:", e)
+
+# Shared memory wrapper across users
+@st.cache_resource
+def get_global_store():
+    data = load_persistent_db()
+    if 'sessions' not in data:
+        data['sessions'] = {}
+    return data
+
+global_store = get_global_store()
+
+def save_current_state():
+    save_persistent_db(global_store)
+
+# ---------------------------------------------------------
+# HELPER FUNCTIONS: SESSION CREATION & DEFAULT STATE
+# ---------------------------------------------------------
+def get_or_create_exam_session(session_code):
+    session_code = str(session_code).strip().upper()
+    if not session_code:
+        session_code = "CBT-UTAMA"
+        
+    if session_code not in global_store['sessions']:
+        global_store['sessions'][session_code] = {
+            'identitas': {
+                'kode_sesi': session_code,
+                'nama_sekolah': 'SMA Negeri 1 Nusantara',
+                'nama_guru': 'Bapak/Ibu Guru',
+                'kelas': 'XII MIPA 1',
+                'judul_ujian': 'Asesmen Sumatif / Ujian TKA',
+                'durasi_menit': 60,
+                'token_mode': 'Dinamis (15 Menit)',
+                'token_statis': 'TKA2026',
+                'token_secret_salt': f'SALT_{session_code}',
+                'base_url_app': 'https://cbt-sekolah.streamlit.app',
+                'folder_id_gdrive': '',
+                'wajib_kroscek_peserta': False,
+                'max_pelanggaran': 3
+            },
+            'bank_soal_mapel': {},
+            'daftar_siswa': [],
+            'sesi_siswa': {},
+            'log_pelanggaran': []
+        }
+        save_current_state()
+    return session_code, global_store['sessions'][session_code]
+
+# Query parameters handling for routing
+query_params = st.query_params
+
+# Determine URL parameters
+url_session = query_params.get('session', query_params.get('kode', 'CBT-UTAMA')).strip().upper()
+url_token = query_params.get('token', '').strip().upper()
+url_mode = query_params.get('mode', '').strip().lower()
+
+# Check if this link is specifically a Student link
+is_student_link = (url_mode == 'siswa') or (bool(url_token) and url_mode != 'admin')
+
+# CSS Customization: Hide Streamlit Branding & Conditional Sidebar Hiding
+if is_student_link:
+    # Completely hide sidebar for students so they cannot see or access Teacher Admin Panel
+    css_student_hide = """
     <style>
-    /* Sembunyikan Header Atas & Menu Utama */
     header, footer, #MainMenu, [data-testid="stHeader"] {
         display: none !important;
         visibility: hidden !important;
     }
-    
-    /* Sembunyikan Floating Toolbar, Badge "Manage app", & Deploy Button di Pojok Bawah */
+    [data-testid="stSidebar"], section[data-testid="stSidebar"] {
+        display: none !important;
+        width: 0px !important;
+    }
     [data-testid="stToolbar"],
     [data-testid="stDecoration"],
     [data-testid="stStatusWidget"],
@@ -46,81 +128,75 @@ st.markdown("""
     [data-testid="stViewerBadge"],
     div[class*="viewerBadge"],
     div[class*="styles_viewerBadge"],
-    div[class*="stActionButton"],
-    .stAppDeployButton,
-    .viewerBadge_container__1QSob,
     a[href*="streamlit.io"],
     a[href*="streamlit.app"] {
         display: none !important;
         visibility: hidden !important;
     }
     </style>
-""", unsafe_allow_html=True)
-
-# ---------------------------------------------------------
-# CENTRAL SHARED DATABASE (DI-SHARE KE SELURUH USER & TAB)
-# ---------------------------------------------------------
-@st.cache_resource
-def get_global_db():
-    """Database Terpusat yang Di-share ke SELURUH Siswa dan Guru (Lintas Tab/Browser)"""
-    return {
-        'identitas': {
-            'nama_sekolah': 'SMA Negeri 1 Nusantara',
-            'nama_guru': 'Bapak/Ibu Guru',
-            'kelas': 'XII MIPA 1',
-            'judul_ujian': 'Asesmen Sumatif / Ujian TKA',
-            'durasi_menit': 60,
-            'token_mode': 'Dinamis (15 Menit)',  # 'Dinamis (15 Menit)' or 'Statis Manual'
-            'token_statis': 'TKA2026',
-            'token_secret_salt': 'TKA_SEKOLAH_SECRET',
-            'base_url_app': 'https://cbt-sekolah.streamlit.app',
-            'folder_id_gdrive': '',
-            'wajib_kroscek_peserta': False,
-            'max_pelanggaran': 3
-        },
-        'bank_soal_mapel': {},  # Dict key: Mapel Name -> List of question dicts
-        'daftar_siswa': [],     # List of dicts: {'no_peserta': '2026-001', 'nama': 'Ahmad', 'mapel': 'Matematika', 'kelas': 'XII MIPA 1'}
-        'sesi_siswa': {},       # key: id_siswa -> {'no_peserta': ..., 'nama': ..., 'mapel': ..., 'status': ..., 'jawaban': {}, ...}
-        'log_pelanggaran': []
+    """
+    st.markdown(css_student_hide, unsafe_allow_html=True)
+else:
+    # Standard clean look for Teacher Admin
+    css_admin_clean = """
+    <style>
+    header, footer, #MainMenu, [data-testid="stHeader"] {
+        display: none !important;
+        visibility: hidden !important;
     }
+    [data-testid="stToolbar"],
+    [data-testid="stDecoration"],
+    [data-testid="stStatusWidget"],
+    [data-testid="stAppDeployButton"],
+    [data-testid="stViewerBadge"],
+    div[class*="viewerBadge"],
+    div[class*="styles_viewerBadge"],
+    a[href*="streamlit.io"],
+    a[href*="streamlit.app"] {
+        display: none !important;
+        visibility: hidden !important;
+    }
+    </style>
+    """
+    st.markdown(css_admin_clean, unsafe_allow_html=True)
 
-# Hubungkan session_state ke database global
-st.session_state.db = get_global_db()
+# Determine Mode Access
+if is_student_link:
+    mode = "Halaman Ujian Siswa"
+else:
+    st.sidebar.title("📌 Navigation CBT")
+    mode = st.sidebar.radio(
+        "Pilih Mode Akses:", 
+        ["Panel Guru (Admin CBT)", "Halaman Ujian Siswa"],
+        index=0
+    )
 
-if 'role' not in st.session_state:
-    st.session_state.role = 'Admin'
-
-if 'current_siswa' not in st.session_state:
-    st.session_state.current_siswa = None
-
-if 'no_soal_aktif' not in st.session_state:
-    st.session_state.no_soal_aktif = 0
-
-# ---------------------------------------------------------
-# ROUTING OTOMATIS BERDASARKAN URL QUERY PARAMETERS
-# ---------------------------------------------------------
-query_params = st.query_params
-
-# Cek apakah URL memuat parameter siswa (token / mode=siswa)
-is_student_link = ('token' in query_params) or (query_params.get('mode') == 'siswa')
-default_mode_idx = 1 if is_student_link else 0
-
-st.sidebar.title("📌 Menu Navigasi")
-mode = st.sidebar.radio(
-    "Pilih Mode Akses:", 
-    ["Panel Guru (Admin CBT)", "Halaman Ujian Siswa"],
-    index=default_mode_idx
-)
-
-if 'token' in query_params:
-    st.session_state.url_token = query_params['token']
+# Active Exam Session Picker for Teachers
+if not is_student_link:
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("🔑 Kode Sesi Ujian Guru")
+    existing_sessions = list(global_store['sessions'].keys()) if global_store['sessions'] else ["CBT-UTAMA"]
+    
+    selected_session = st.sidebar.text_input(
+        "Kode Unik Ujian Anda:",
+        value=url_session if url_session else "CBT-UTAMA",
+        help="Setiap guru dapat membuat Kode Unik Ujian sendiri (misal: MATEMATIKA-PAK-AHMAD, IPA-BU-RINA). Data antar guru terpisah 100% aman."
+    ).strip().upper()
+    
+    if not selected_session:
+        selected_session = "CBT-UTAMA"
+        
+    active_session_code, current_db = get_or_create_exam_session(selected_session)
+    
+    if existing_sessions:
+        st.sidebar.caption(f"📚 Sesi Ujian Tersimpan ({len(existing_sessions)}): `{', '.join(existing_sessions[:5])}`")
+else:
+    active_session_code, current_db = get_or_create_exam_session(url_session)
 
 # ---------------------------------------------------------
 # HELPER FUNCTIONS: TOKEN, WORD PARSER, SCORING, GDRIVE
 # ---------------------------------------------------------
-
 def generate_dynamic_token(secret_salt="TKA_SEKOLAH_SECRET"):
-    """Menghasilkan Token Acak 6 Karakter yang Berganti Otomatis Setiap 15 Menit"""
     interval_15m = int(time.time() // 900)
     hash_obj = hashlib.md5(f"{secret_salt}_{interval_15m}".encode())
     token = hash_obj.hexdigest()[:6].upper()
@@ -130,19 +206,17 @@ def generate_dynamic_token(secret_salt="TKA_SEKOLAH_SECRET"):
     secs = seconds_remaining % 60
     return token, f"{mins:02d}:{secs:02d}"
 
-def get_active_token():
-    identitas = st.session_state.db['identitas']
-    if identitas.get('token_mode') == 'Dinamis (15 Menit)':
-        token, _ = generate_dynamic_token(identitas.get('token_secret_salt', 'TKA_SEKOLAH_SECRET'))
+def get_active_token(db_identitas):
+    if db_identitas.get('token_mode') == 'Dinamis (15 Menit)':
+        token, _ = generate_dynamic_token(db_identitas.get('token_secret_salt', 'TKA_SEKOLAH_SECRET'))
         return token
     else:
-        return identitas.get('token_statis', 'TKA2026').strip().upper()
+        return db_identitas.get('token_statis', 'TKA2026').strip().upper()
 
 @st.cache_data(show_spinner=False)
 def parse_word_soal_bytes(file_bytes):
-    """Membaca & Mengekstrak Soal dari File Word (.docx) secara Cepat"""
     if not HAS_DOCX:
-        st.error("❌ Library `python-docx` belum terinstall. Pastikan `python-docx` sudah ada di file `requirements.txt`!")
+        st.error("❌ Library `python-docx` belum terinstall di server. Pastikan `python-docx` ada di `requirements.txt`!")
         return []
         
     doc = docx.Document(io.BytesIO(file_bytes))
@@ -230,11 +304,11 @@ def parse_kunci_tepat_tidak_tepat(kunci_str):
             kunci_dict[k.strip().upper()] = v.strip().title()
     return kunci_dict
 
-def hitung_skor_siswa(id_siswa):
-    siswa_data = st.session_state.db['sesi_siswa'].get(id_siswa, {})
+def hitung_skor_siswa(id_siswa, db_target):
+    siswa_data = db_target['sesi_siswa'].get(id_siswa, {})
     jawaban_siswa = siswa_data.get('jawaban', {})
     mapel_siswa = siswa_data.get('mapel', '')
-    soal_list = st.session_state.db['bank_soal_mapel'].get(mapel_siswa, [])
+    soal_list = db_target['bank_soal_mapel'].get(mapel_siswa, [])
     
     skor_total = 0.0
     detail = {}
@@ -265,8 +339,9 @@ def hitung_skor_siswa(id_siswa):
         skor_total += skor_soal
         detail[f"Soal_{idx+1}"] = skor_soal
         
-    st.session_state.db['sesi_siswa'][id_siswa]['nilai_total'] = round(skor_total, 2)
-    st.session_state.db['sesi_siswa'][id_siswa]['detail_skor'] = detail
+    db_target['sesi_siswa'][id_siswa]['nilai_total'] = round(skor_total, 2)
+    db_target['sesi_siswa'][id_siswa]['detail_skor'] = detail
+    save_current_state()
     return skor_total
 
 def upload_ke_gdrive_guru(file_buffer, file_name, folder_id):
@@ -287,12 +362,19 @@ def upload_ke_gdrive_guru(file_buffer, file_name, folder_id):
     except Exception as e:
         return False, str(e)
 
+# Initialize Session State Variables
+if 'current_siswa' not in st.session_state:
+    st.session_state.current_siswa = None
+
+if 'no_soal_aktif' not in st.session_state:
+    st.session_state.no_soal_aktif = 0
+
 # ---------------------------------------------------------
 # MODE 1: PANEL GURU / ADMIN CBT
 # ---------------------------------------------------------
 if mode == "Panel Guru (Admin CBT)":
     st.title("⚙️ Panel Kelola & Pemantauan CBT Guru")
-    st.caption("Mendukung Multi-Mapel Sesi TKA, Token Dinamis 15 Menit, Import Word (.docx), & Skalabilitas 1000 Peserta")
+    st.info(f"📍 **Kode Unik Ujian Aktif**: `{active_session_code}` | Data tersimpan otomatis & aman selamanya (tidak akan hilang walau ditutup).")
     
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "1. Setting Ujian & Link", 
@@ -307,65 +389,69 @@ if mode == "Panel Guru (Admin CBT)":
         st.subheader("📋 Identitas Pelaksanaan Ujian")
         col1, col2 = st.columns(2)
         with col1:
-            st.session_state.db['identitas']['nama_sekolah'] = st.text_input("Nama Sekolah / Instansi:", st.session_state.db['identitas']['nama_sekolah'])
-            st.session_state.db['identitas']['nama_guru'] = st.text_input("Nama Guru / Pengampu:", st.session_state.db['identitas']['nama_guru'])
-            st.session_state.db['identitas']['kelas'] = st.text_input("Kelas / Rombel Target:", st.session_state.db['identitas']['kelas'])
+            current_db['identitas']['nama_sekolah'] = st.text_input("Nama Sekolah / Instansi:", current_db['identitas']['nama_sekolah'])
+            current_db['identitas']['nama_guru'] = st.text_input("Nama Guru / Pengampu:", current_db['identitas']['nama_guru'])
+            current_db['identitas']['kelas'] = st.text_input("Kelas / Rombel Target:", current_db['identitas']['kelas'])
         with col2:
-            st.session_state.db['identitas']['judul_ujian'] = st.text_input("Judul Asesmen / Ujian:", st.session_state.db['identitas']['judul_ujian'])
-            st.session_state.db['identitas']['durasi_menit'] = st.number_input("Durasi Ujian (Menit):", min_value=1, value=int(st.session_state.db['identitas']['durasi_menit']))
-            st.session_state.db['identitas']['base_url_app'] = st.text_input("Domain / URL Aplikasi CBT Anda:", st.session_state.db['identitas']['base_url_app'], help="Masukkan URL Streamlit/Custom Domain sekolah Anda agar Link Ujian aktif")
+            current_db['identitas']['judul_ujian'] = st.text_input("Judul Asesmen / Ujian:", current_db['identitas']['judul_ujian'])
+            current_db['identitas']['durasi_menit'] = st.number_input("Durasi Ujian (Menit):", min_value=1, value=int(current_db['identitas']['durasi_menit']))
+            current_db['identitas']['base_url_app'] = st.text_input("Domain / URL Aplikasi CBT Anda:", current_db['identitas']['base_url_app'], help="Masukkan URL Streamlit/Custom Domain sekolah Anda agar Link Ujian aktif")
 
         st.markdown("---")
         st.subheader("🔐 Pengaturan Token 15 Menit & Keamanan TKA")
         col_a, col_b = st.columns(2)
         with col_a:
-            st.session_state.db['identitas']['token_mode'] = st.radio(
+            current_db['identitas']['token_mode'] = st.radio(
                 "Sistem Token Ujian:", 
                 ["Dinamis (15 Menit)", "Statis Manual"],
-                index=0 if st.session_state.db['identitas'].get('token_mode') == 'Dinamis (15 Menit)' else 1
+                index=0 if current_db['identitas'].get('token_mode') == 'Dinamis (15 Menit)' else 1
             )
-            if st.session_state.db['identitas']['token_mode'] == 'Statis Manual':
-                st.session_state.db['identitas']['token_statis'] = st.text_input("Token Statis:", st.session_state.db['identitas']['token_statis'])
+            if current_db['identitas']['token_mode'] == 'Statis Manual':
+                current_db['identitas']['token_statis'] = st.text_input("Token Statis:", current_db['identitas']['token_statis'])
             else:
-                active_tok, timer_tok = generate_dynamic_token(st.session_state.db['identitas'].get('token_secret_salt', 'TKA_SEKOLAH_SECRET'))
+                active_tok, timer_tok = generate_dynamic_token(current_db['identitas'].get('token_secret_salt', f'SALT_{active_session_code}'))
                 st.info(f"🔑 **TOKEN AKTIF SAAT INI**: `{active_tok}` (Berganti dalam: **{timer_tok}**)")
                 
-            st.session_state.db['identitas']['max_pelanggaran'] = st.slider("Maksimal Toleransi Kecurangan (Minimize/Tab Switch):", 1, 10, int(st.session_state.db['identitas']['max_pelanggaran']))
+            current_db['identitas']['max_pelanggaran'] = st.slider("Maksimal Toleransi Kecurangan (Minimize/Tab Switch):", 1, 10, int(current_db['identitas']['max_pelanggaran']))
             
         with col_b:
-            st.session_state.db['identitas']['wajib_kroscek_peserta'] = st.checkbox(
+            current_db['identitas']['wajib_kroscek_peserta'] = st.checkbox(
                 "Wajibkan Kroscek Nomor Peserta dengan Daftar Siswa (DPT)", 
-                value=st.session_state.db['identitas'].get('wajib_kroscek_peserta', False)
+                value=current_db['identitas'].get('wajib_kroscek_peserta', False)
             )
 
         st.subheader("📁 Pengaturan Penyimpanan Google Drive Guru")
-        st.session_state.db['identitas']['folder_id_gdrive'] = st.text_input(
+        current_db['identitas']['folder_id_gdrive'] = st.text_input(
             "Folder ID Google Drive Guru:",
-            value=st.session_state.db['identitas'].get('folder_id_gdrive', ''),
+            value=current_db['identitas'].get('folder_id_gdrive', ''),
             placeholder="Contoh: 1a2B3c4D5e6F7g8H9i0J_kLmnOpQrStUv",
             help="Masukkan kode unik folder Google Drive Anda. Hasil ujian siswa akan otomatis diunggah ke folder ini."
         )
 
+        save_current_state()
+
         st.markdown("---")
         st.subheader("🚀 Status Kesiapan & Generator Link Ujian Siswa")
         
-        has_soal = len(st.session_state.db['bank_soal_mapel']) > 0
-        has_siswa = len(st.session_state.db['daftar_siswa']) > 0 or not st.session_state.db['identitas']['wajib_kroscek_peserta']
-        has_url = bool(st.session_state.db['identitas']['base_url_app'].strip())
+        has_soal = len(current_db['bank_soal_mapel']) > 0
+        has_siswa = len(current_db['daftar_siswa']) > 0 or not current_db['identitas']['wajib_kroscek_peserta']
+        has_url = bool(current_db['identitas']['base_url_app'].strip())
         
         col_chk1, col_chk2, col_chk3 = st.columns(3)
         col_chk1.metric("1. Pengaturan Identitas & URL", "READY ✅" if has_url else "BELUM ❌")
-        col_chk2.metric("2. Upload Bank Soal", f"READY ({len(st.session_state.db['bank_soal_mapel'])} Mapel) ✅" if has_soal else "BELUM ❌")
-        col_chk3.metric("3. Kroscek DPT Peserta", f"READY ({len(st.session_state.db['daftar_siswa'])} Siswa) ✅" if has_siswa else "OPSIONAL / BELUM ⚠️")
+        col_chk2.metric("2. Upload Bank Soal", f"READY ({len(current_db['bank_soal_mapel'])} Mapel) ✅" if has_soal else "BELUM ❌")
+        col_chk3.metric("3. Kroscek DPT Peserta", f"READY ({len(current_db['daftar_siswa'])} Siswa) ✅" if has_siswa else "OPSIONAL / BELUM ⚠️")
         
         if has_soal and has_url:
-            cur_token = get_active_token()
-            base_u = st.session_state.db['identitas']['base_url_app'].rstrip('/')
-            link_aktif = f"{base_u}/?token={cur_token}&mode=siswa"
+            cur_token = get_active_token(current_db['identitas'])
+            base_u = current_db['identitas']['base_url_app'].rstrip('/')
             
-            st.success("🎉 **UJIAN SIAP DILAKSANAKAN!** Bagikan link di bawah kepada siswa:")
-            st.code(link_aktif, language="text")
-            st.caption("Siswa yang mengklik link di atas akan otomatis mengisikan Token Ujian dan langsung masuk ke Halaman Ujian Siswa.")
+            # LINK KHUSUS SISWA (Siswa TIDAK BISA melihat menu admin guru sama sekali)
+            link_aktif_siswa = f"{base_u}/?session={active_session_code}&token={cur_token}&mode=siswa"
+            
+            st.success("🎉 **UJIAN SIAP DILAKSANAKAN!** Bagikan link khusus siswa di bawah ini:")
+            st.code(link_aktif_siswa, language="text")
+            st.caption("🔒 Link di atas secara otomatis mengunci menu Administrasi Guru sehingga siswa hanya melihat halaman Ujian Siswa.")
         else:
             st.warning("⚠️ **Link Ujian Belum Aktif**: Harap unggah minimal 1 Bank Soal pada Tab 2 terlebih dahulu.")
 
@@ -393,7 +479,8 @@ if mode == "Panel Guru (Admin CBT)":
                         parsed_soal = df_s.to_dict('records')
                         
                     if parsed_soal:
-                        st.session_state.db['bank_soal_mapel'][mapel_clean] = parsed_soal
+                        current_db['bank_soal_mapel'][mapel_clean] = parsed_soal
+                        save_current_state()
                         st.success(f"✅ Berhasil mengimpor {len(parsed_soal)} soal untuk Mata Pelajaran **{mapel_clean}**!")
                     else:
                         st.error("Gagal mengekstrak soal dari file. Pastikan tabel format soal sesuai template.")
@@ -402,8 +489,8 @@ if mode == "Panel Guru (Admin CBT)":
                     
         st.markdown("---")
         st.write("### 📚 Daftar Bank Soal Aktif per Mapel:")
-        if st.session_state.db['bank_soal_mapel']:
-            for m_name, q_list in st.session_state.db['bank_soal_mapel'].items():
+        if current_db['bank_soal_mapel']:
+            for m_name, q_list in current_db['bank_soal_mapel'].items():
                 st.write(f"• **{m_name}**: {len(q_list)} Soal Terunggah")
         else:
             st.info("Belum ada bank soal terunggah.")
@@ -419,8 +506,9 @@ if mode == "Panel Guru (Admin CBT)":
                     df_siswa = pd.read_csv(file_siswa)
                 else:
                     df_siswa = pd.read_excel(file_siswa)
-                st.session_state.db['daftar_siswa'] = df_siswa.to_dict('records')
-                st.success(f"✅ Berhasil memuat {len(st.session_state.db['daftar_siswa'])} data peserta DPT!")
+                current_db['daftar_siswa'] = df_siswa.to_dict('records')
+                save_current_state()
+                st.success(f"✅ Berhasil memuat {len(current_db['daftar_siswa'])} data peserta DPT!")
                 st.dataframe(df_siswa.head(10))
             except Exception as e:
                 st.error(f"Gagal membaca daftar siswa: {e}")
@@ -429,11 +517,11 @@ if mode == "Panel Guru (Admin CBT)":
     with tab3:
         st.subheader("📊 Monitoring Real-Time Peserta Ujian")
         
-        total_peserta = len(st.session_state.db['daftar_siswa']) if st.session_state.db['daftar_siswa'] else len(st.session_state.db['sesi_siswa'])
-        login_count = len(st.session_state.db['sesi_siswa'])
+        total_peserta = len(current_db['daftar_siswa']) if current_db['daftar_siswa'] else len(current_db['sesi_siswa'])
+        login_count = len(current_db['sesi_siswa'])
         
-        sedang = sum(1 for s in st.session_state.db['sesi_siswa'].values() if s.get('status') == 'Sedang Mengerjakan')
-        selesai = sum(1 for s in st.session_state.db['sesi_siswa'].values() if s.get('status') == 'Selesai')
+        sedang = sum(1 for s in current_db['sesi_siswa'].values() if s.get('status') == 'Sedang Mengerjakan')
+        selesai = sum(1 for s in current_db['sesi_siswa'].values() if s.get('status') == 'Selesai')
         belum = total_peserta - login_count if total_peserta >= login_count else 0
         
         m1, m2, m3, m4 = st.columns(4)
@@ -444,11 +532,11 @@ if mode == "Panel Guru (Admin CBT)":
         
         st.markdown("---")
         st.write("### 🔍 Tabel Status Detail Per Peserta")
-        if st.session_state.db['sesi_siswa']:
+        if current_db['sesi_siswa']:
             monitor_data = []
-            for id_s, data in st.session_state.db['sesi_siswa'].items():
+            for id_s, data in current_db['sesi_siswa'].items():
                 m_siswa = data.get('mapel', '')
-                total_s_mapel = len(st.session_state.db['bank_soal_mapel'].get(m_siswa, []))
+                total_s_mapel = len(current_db['bank_soal_mapel'].get(m_siswa, []))
                 soal_terjawab = len([j for j in data.get('jawaban', {}).values() if is_jawaban_terjawab(j)])
                 
                 monitor_data.append({
@@ -473,10 +561,11 @@ if mode == "Panel Guru (Admin CBT)":
         col_r1, col_r2 = st.columns(2)
         with col_r1:
             st.markdown("#### 👤 Reset Ujian Per Siswa")
-            if st.session_state.db['sesi_siswa']:
-                pilih_siswa_reset = st.selectbox("Pilih Siswa yang Ingin Direset:", list(st.session_state.db['sesi_siswa'].keys()))
+            if current_db['sesi_siswa']:
+                pilih_siswa_reset = st.selectbox("Pilih Siswa yang Ingin Direset:", list(current_db['sesi_siswa'].keys()))
                 if st.button("🔴 Reset Ujian Siswa Ini", type="secondary"):
-                    del st.session_state.db['sesi_siswa'][pilih_siswa_reset]
+                    del current_db['sesi_siswa'][pilih_siswa_reset]
+                    save_current_state()
                     st.success(f"Sesi ujian siswa {pilih_siswa_reset} telah di-reset. Siswa dapat login kembali!")
                     st.rerun()
             else:
@@ -485,16 +574,17 @@ if mode == "Panel Guru (Admin CBT)":
         with col_r2:
             st.markdown("#### 🏫 Reset Seluruh Ujian (Per Sesi / Per Kelas)")
             if st.button("🚨 RESET SEMUA SISWA & SESI", type="primary"):
-                st.session_state.db['sesi_siswa'] = {}
+                current_db['sesi_siswa'] = {}
+                save_current_state()
                 st.success("Semua data sesi ujian siswa berhasil di-reset bersih!")
                 st.rerun()
 
     # TAB 5: REKAPITULASI HASIL
     with tab5:
         st.subheader("📥 Unduh Rekapitulasi Nilai Ujian (Excel)")
-        if st.session_state.db['sesi_siswa']:
+        if current_db['sesi_siswa']:
             rekap_list = []
-            for id_s, d in st.session_state.db['sesi_siswa'].items():
+            for id_s, d in current_db['sesi_siswa'].items():
                 row = {
                     'No_Peserta': d.get('no_peserta', id_s),
                     'Nama_Siswa': d.get('nama', ''),
@@ -518,17 +608,17 @@ if mode == "Panel Guru (Admin CBT)":
             st.download_button(
                 label="📥 Download Hasil Ujian (.xlsx)",
                 data=excel_data,
-                file_name=f"Hasil_Ujian_{st.session_state.db['identitas']['judul_ujian']}.xlsx",
+                file_name=f"Hasil_Ujian_{current_db['identitas']['judul_ujian']}_{active_session_code}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
             
             if st.button("☁ Simpan Hasil Ujian Langsung ke Google Drive Saya"):
-                folder_id = st.session_state.db['identitas'].get('folder_id_gdrive', '').strip()
+                folder_id = current_db['identitas'].get('folder_id_gdrive', '').strip()
                 if not folder_id:
                     st.error("❌ Folder ID Google Drive belum diisi pada Tab 1!")
                 else:
                     output.seek(0)
-                    nama_file_excel = f"Hasil_Ujian_{st.session_state.db['identitas']['judul_ujian']}.xlsx"
+                    nama_file_excel = f"Hasil_Ujian_{current_db['identitas']['judul_ujian']}_{active_session_code}.xlsx"
                     with st.spinner("Sedang mengunggah hasil ujian ke Google Drive Anda..."):
                         berhasil, pesan = upload_ke_gdrive_guru(output, nama_file_excel, folder_id)
                         if berhasil:
@@ -542,11 +632,11 @@ if mode == "Panel Guru (Admin CBT)":
 # MODE 2: HALAMAN UJIAN SISWA (CBT INTERFACE ALA TKA)
 # ---------------------------------------------------------
 else:
-    if not st.session_state.db['bank_soal_mapel']:
-        st.error("⚠️ Ujian belum siap! Bank soal belum diunggah oleh Guru/Admin CBT.")
+    if not current_db['bank_soal_mapel']:
+        st.error(f"⚠️ Ujian belum siap! Bank soal untuk sesi ujian `{active_session_code}` belum diunggah oleh Guru/Admin CBT.")
         st.stop()
         
-    identitas = st.session_state.db['identitas']
+    identitas = current_db['identitas']
     
     # LOGIN SISWA
     if not st.session_state.current_siswa:
@@ -558,26 +648,26 @@ else:
         with st.form("form_login_siswa"):
             st.subheader("🔑 Konfirmasi Identitas Peserta Ujian")
             
-            default_token = getattr(st.session_state, 'url_token', get_active_token())
+            default_token = url_token if url_token else get_active_token(identitas)
             token_input = st.text_input("Masukkan Token Ujian:", value=default_token)
             
             no_peserta_input = st.text_input("Nomor Peserta Ujian (Contoh: 2026-001):")
             nama_siswa_input = st.text_input("Nama Lengkap Siswa:")
             
-            mapel_options = list(st.session_state.db['bank_soal_mapel'].keys())
+            mapel_options = list(current_db['bank_soal_mapel'].keys())
             mapel_pilihan = st.selectbox("Pilih Mata Pelajaran yang Diikuti:", mapel_options)
             
             btn_login = st.form_submit_button("🚀 MASUK RUANG UJIAN")
             
             if btn_login:
-                active_token = get_active_token()
+                active_token = get_active_token(identitas)
                 if token_input.strip().upper() != active_token:
                     st.error(f"❌ Token Ujian Salah atau Telah Kadaluarsa! Token saat ini: `{active_token}`")
                 elif not nama_siswa_input or not no_peserta_input:
                     st.error("❌ Harap isi Nomor Peserta dan Nama Lengkap!")
                 else:
                     is_valid_dpt = True
-                    dpt = st.session_state.db['daftar_siswa']
+                    dpt = current_db['daftar_siswa']
                     if identitas.get('wajib_kroscek_peserta') and dpt:
                         found = [s for s in dpt if str(s.get('No_Peserta', s.get('no_peserta', ''))).strip().lower() == no_peserta_input.strip().lower()]
                         if not found:
@@ -593,8 +683,8 @@ else:
                         id_siswa = str(no_peserta_input).strip()
                         st.session_state.current_siswa = id_siswa
                         
-                        if id_siswa not in st.session_state.db['sesi_siswa']:
-                            st.session_state.db['sesi_siswa'][id_siswa] = {
+                        if id_siswa not in current_db['sesi_siswa']:
+                            current_db['sesi_siswa'][id_siswa] = {
                                 'no_peserta': id_siswa,
                                 'nama': nama_siswa_input.strip(),
                                 'mapel': mapel_pilihan,
@@ -606,13 +696,14 @@ else:
                                 'nilai_total': 0,
                                 'detail_skor': {}
                             }
+                            save_current_state()
                         st.success("Login Berhasil! Mengalihkan ke ruang ujian...")
                         st.rerun()
 
     # AREA KERJA UJIAN SISWA
     else:
         id_siswa = st.session_state.current_siswa
-        sesi = st.session_state.db['sesi_siswa'].get(id_siswa)
+        sesi = current_db['sesi_siswa'].get(id_siswa)
         
         if not sesi:
             st.error("Sesi ujian tidak ditemukan atau telah di-reset oleh Admin.")
@@ -664,7 +755,7 @@ else:
         
         col_left, col_right = st.columns([3, 1])
         
-        soal_list = st.session_state.db['bank_soal_mapel'].get(mapel_siswa, [])
+        soal_list = current_db['bank_soal_mapel'].get(mapel_siswa, [])
         total_soal = len(soal_list)
         
         if total_soal == 0:
@@ -728,6 +819,7 @@ else:
                 )
                 if jawaban_user:
                     sesi['jawaban'][curr_idx] = jawaban_user
+                    save_current_state()
 
             elif tipe == 'TEPAT_TIDAK_TEPAT':
                 st.write("Tentukan Tepat / Tidak Tepat untuk setiap pernyataan berikut:")
@@ -748,11 +840,13 @@ else:
                             key=f"radio_tepat_{curr_idx}_{it}"
                         )
                 sesi['jawaban'][curr_idx] = ans_dict
+                save_current_state()
 
             elif tipe == 'URAIAN_SINGKAT':
                 val_uraian = str(curr_ans) if curr_ans is not None else ""
                 ans_uraian = st.text_area("Ketik Jawaban Singkat Anda di Sini:", value=val_uraian, key=f"uraian_{curr_idx}")
                 sesi['jawaban'][curr_idx] = ans_uraian
+                save_current_state()
 
             st.markdown("---")
             nav_col1, nav_col2, nav_col3 = st.columns([1, 1, 1])
@@ -766,6 +860,7 @@ else:
                     sesi['ragu'][curr_idx] = True
                 else:
                     sesi['ragu'][curr_idx] = False
+                save_current_state()
             with nav_col3:
                 if curr_idx < total_soal - 1:
                     if st.button("Soal Berikutnya ➡️", type="primary"):
@@ -774,7 +869,8 @@ else:
                 else:
                     if st.button("🏁 SELESAI & SIMPAN UJIAN", type="primary"):
                         sesi['status'] = 'Selesai'
-                        hitung_skor_siswa(id_siswa)
+                        hitung_skor_siswa(id_siswa, current_db)
+                        save_current_state()
                         st.rerun()
 
         # KISI-KISI NOMOR SOAL
