@@ -58,10 +58,12 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# INITIALIZE SESSION STATE DATA (MULTI-MAPEL & TKA SUPPORT)
+# CENTRAL SHARED DATABASE (DI-SHARE KE SELURUH USER & TAB)
 # ---------------------------------------------------------
-if 'db' not in st.session_state:
-    st.session_state.db = {
+@st.cache_resource
+def get_global_db():
+    """Database Terpusat yang Di-share ke SELURUH Siswa dan Guru (Lintas Tab/Browser)"""
+    return {
         'identitas': {
             'nama_sekolah': 'SMA Negeri 1 Nusantara',
             'nama_guru': 'Bapak/Ibu Guru',
@@ -82,6 +84,9 @@ if 'db' not in st.session_state:
         'log_pelanggaran': []
     }
 
+# Hubungkan session_state ke database global
+st.session_state.db = get_global_db()
+
 if 'role' not in st.session_state:
     st.session_state.role = 'Admin'
 
@@ -90,6 +95,25 @@ if 'current_siswa' not in st.session_state:
 
 if 'no_soal_aktif' not in st.session_state:
     st.session_state.no_soal_aktif = 0
+
+# ---------------------------------------------------------
+# ROUTING OTOMATIS BERDASARKAN URL QUERY PARAMETERS
+# ---------------------------------------------------------
+query_params = st.query_params
+
+# Cek apakah URL memuat parameter siswa (token / mode=siswa)
+is_student_link = ('token' in query_params) or (query_params.get('mode') == 'siswa')
+default_mode_idx = 1 if is_student_link else 0
+
+st.sidebar.title("📌 Menu Navigasi")
+mode = st.sidebar.radio(
+    "Pilih Mode Akses:", 
+    ["Panel Guru (Admin CBT)", "Halaman Ujian Siswa"],
+    index=default_mode_idx
+)
+
+if 'token' in query_params:
+    st.session_state.url_token = query_params['token']
 
 # ---------------------------------------------------------
 # HELPER FUNCTIONS: TOKEN, WORD PARSER, SCORING, GDRIVE
@@ -264,16 +288,6 @@ def upload_ke_gdrive_guru(file_buffer, file_name, folder_id):
         return False, str(e)
 
 # ---------------------------------------------------------
-# NAVIGATION & SIDEBAR
-# ---------------------------------------------------------
-st.sidebar.title("📌 Menu Navigasi")
-mode = st.sidebar.radio("Pilih Mode Akses:", ["Panel Guru (Admin CBT)", "Halaman Ujian Siswa"])
-
-query_params = st.query_params
-if 'token' in query_params:
-    st.session_state.url_token = query_params['token']
-
-# ---------------------------------------------------------
 # MODE 1: PANEL GURU / ADMIN CBT
 # ---------------------------------------------------------
 if mode == "Panel Guru (Admin CBT)":
@@ -299,7 +313,7 @@ if mode == "Panel Guru (Admin CBT)":
         with col2:
             st.session_state.db['identitas']['judul_ujian'] = st.text_input("Judul Asesmen / Ujian:", st.session_state.db['identitas']['judul_ujian'])
             st.session_state.db['identitas']['durasi_menit'] = st.number_input("Durasi Ujian (Menit):", min_value=1, value=int(st.session_state.db['identitas']['durasi_menit']))
-            st.session_state.db['identitas']['base_url_app'] = st.text_input("Domain / URL Aplikasi CBT Anda:", st.session_state.db['identitas']['base_url_app'], help="Masukkan URL Streamlit/Custom Domain sekolah Anda agar Link Ujian aktif dan tidak 'can't reach page'")
+            st.session_state.db['identitas']['base_url_app'] = st.text_input("Domain / URL Aplikasi CBT Anda:", st.session_state.db['identitas']['base_url_app'], help="Masukkan URL Streamlit/Custom Domain sekolah Anda agar Link Ujian aktif")
 
         st.markdown("---")
         st.subheader("🔐 Pengaturan Token 15 Menit & Keamanan TKA")
@@ -347,11 +361,11 @@ if mode == "Panel Guru (Admin CBT)":
         if has_soal and has_url:
             cur_token = get_active_token()
             base_u = st.session_state.db['identitas']['base_url_app'].rstrip('/')
-            link_aktif = f"{base_u}/?token={cur_token}"
+            link_aktif = f"{base_u}/?token={cur_token}&mode=siswa"
             
             st.success("🎉 **UJIAN SIAP DILAKSANAKAN!** Bagikan link di bawah kepada siswa:")
             st.code(link_aktif, language="text")
-            st.caption("Siswa yang mengklik link di atas akan otomatis mengisikan Token Ujian di halaman login.")
+            st.caption("Siswa yang mengklik link di atas akan otomatis mengisikan Token Ujian dan langsung masuk ke Halaman Ujian Siswa.")
         else:
             st.warning("⚠️ **Link Ujian Belum Aktif**: Harap unggah minimal 1 Bank Soal pada Tab 2 terlebih dahulu.")
 
