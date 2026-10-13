@@ -22,7 +22,7 @@ try:
 except ImportError:
     HAS_DOCX = False
 
-# Streamlit Page Config
+# Streamlit Page Config - Wide Layout & Collapsed Sidebar for Fullscreen feel
 st.set_page_config(
     page_title="Sistem Ujian Online CBT - TKA",
     page_icon="📝",
@@ -31,7 +31,7 @@ st.set_page_config(
 )
 
 # ---------------------------------------------------------
-# PERSISTENT LOCAL FILE DATABASE (AGAR DATA TERSIMPAN BERHARI-HARI)
+# PERSISTENT LOCAL FILE DATABASE
 # ---------------------------------------------------------
 DB_FILE = "cbt_persistent_db.json"
 
@@ -51,7 +51,6 @@ def save_persistent_db(db_data):
     except Exception as e:
         print("Save error:", e)
 
-# Shared memory wrapper across users
 @st.cache_resource
 def get_global_store():
     data = load_persistent_db()
@@ -64,9 +63,6 @@ global_store = get_global_store()
 def save_current_state():
     save_persistent_db(global_store)
 
-# ---------------------------------------------------------
-# HELPER FUNCTIONS: SESSION CREATION & DEFAULT STATE
-# ---------------------------------------------------------
 def get_or_create_exam_session(session_code):
     session_code = str(session_code).strip().upper()
     if not session_code:
@@ -97,81 +93,146 @@ def get_or_create_exam_session(session_code):
         save_current_state()
     return session_code, global_store['sessions'][session_code]
 
-# Query parameters handling for routing
+# Query parameters handling
 query_params = st.query_params
-
-# Determine URL parameters
 url_session = query_params.get('session', query_params.get('kode', 'CBT-UTAMA')).strip().upper()
 url_token = query_params.get('token', '').strip().upper()
 url_mode = query_params.get('mode', '').strip().lower()
 
-# Check if this link is specifically a Student link
 is_student_link = (url_mode == 'siswa') or (bool(url_token) and url_mode != 'admin')
 
-# CSS Customization: Hide Streamlit Branding & Conditional Sidebar Hiding
+# ---------------------------------------------------------
+# GLOBAL CSS STYLING (Aplikasi TKA, Font Arial, Fullscreen)
+# ---------------------------------------------------------
+custom_css = """
+<style>
+/* Font Global Arial & Fullscreen Layout */
+html, body, [class*="css"], .stApp {
+    font-family: Arial, Helvetica, sans-serif !important;
+    background-color: #F4F6F9 !important;
+}
+
+/* Hilangkan Padding Atas/Samping Bawaan Streamlit agar Layar Proporsional */
+.block-container {
+    padding-top: 1rem !important;
+    padding-bottom: 1rem !important;
+    padding-left: 2rem !important;
+    padding-right: 2rem !important;
+    max-width: 100% !important;
+}
+
+/* Sembunyikan Branding & Top Header */
+header, footer, #MainMenu, [data-testid="stHeader"] {
+    display: none !important;
+    visibility: hidden !important;
+}
+
+/* Sembunyikan Toolbar & Badge Streamlit */
+[data-testid="stToolbar"],
+[data-testid="stDecoration"],
+[data-testid="stStatusWidget"],
+[data-testid="stAppDeployButton"],
+[data-testid="stViewerBadge"],
+div[class*="viewerBadge"],
+div[class*="styles_viewerBadge"],
+a[href*="streamlit.io"],
+a[href*="streamlit.app"] {
+    display: none !important;
+    visibility: hidden !important;
+}
+
+/* Ukuran Font Khusus TKA */
+.tka-instansi-title {
+    font-family: Arial, sans-serif !important;
+    font-size: 18pt !important;
+    font-weight: bold !important;
+    color: #FFFFFF !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+.tka-exam-sub {
+    font-family: Arial, sans-serif !important;
+    font-size: 11pt !important;
+    color: #E2E8F0 !important;
+}
+
+.tka-stimulus-box {
+    font-family: Arial, sans-serif !important;
+    font-size: 12pt !important;
+    line-height: 1.6 !important;
+    background-color: #FFFFFF !important;
+    border: 1px solid #CBD5E1 !important;
+    border-left: 5px solid #1E3A8A !important;
+    padding: 15px !important;
+    border-radius: 6px !important;
+    margin-bottom: 15px !important;
+    color: #1E293B !important;
+}
+
+.tka-soal-text {
+    font-family: Arial, sans-serif !important;
+    font-size: 12pt !important;
+    font-weight: bold !important;
+    line-height: 1.6 !important;
+    color: #0F172A !important;
+    margin-bottom: 15px !important;
+}
+
+/* Label Radio / Jawaban Arial 12pt */
+[data-testid="stMarkdownContainer"] p {
+    font-family: Arial, sans-serif !important;
+    font-size: 12pt !important;
+    color: #1E293B !important;
+}
+
+div[class*="stRadio"] label p {
+    font-family: Arial, sans-serif !important;
+    font-size: 12pt !important;
+    font-weight: normal !important;
+}
+
+/* Tombol Navigasi Bawah (Arial 10pt) */
+.stButton > button {
+    font-family: Arial, sans-serif !important;
+    font-size: 10pt !important;
+    font-weight: bold !important;
+    border-radius: 4px !important;
+}
+
+/* Kotak Kisi-Kisi Nomor Soal sebelah Kanan (Arial 10pt) */
+div[data-testid="column"] button {
+    font-family: Arial, sans-serif !important;
+    font-size: 10pt !important;
+    padding: 4px 8px !important;
+}
+</style>
+"""
+
+st.markdown(custom_css, unsafe_allow_html=True)
+
 if is_student_link:
-    # Completely hide sidebar for students so they cannot see or access Teacher Admin Panel
-    css_student_hide = """
+    # Sembunyikan total sidebar untuk siswa
+    st.markdown("""
     <style>
-    header, footer, #MainMenu, [data-testid="stHeader"] {
-        display: none !important;
-        visibility: hidden !important;
-    }
     [data-testid="stSidebar"], section[data-testid="stSidebar"] {
         display: none !important;
         width: 0px !important;
     }
-    [data-testid="stToolbar"],
-    [data-testid="stDecoration"],
-    [data-testid="stStatusWidget"],
-    [data-testid="stAppDeployButton"],
-    [data-testid="stViewerBadge"],
-    div[class*="viewerBadge"],
-    div[class*="styles_viewerBadge"],
-    a[href*="streamlit.io"],
-    a[href*="streamlit.app"] {
-        display: none !important;
-        visibility: hidden !important;
-    }
     </style>
-    """
-    st.markdown(css_student_hide, unsafe_allow_html=True)
-else:
-    # Standard clean look for Teacher Admin
-    css_admin_clean = """
-    <style>
-    header, footer, #MainMenu, [data-testid="stHeader"] {
-        display: none !important;
-        visibility: hidden !important;
-    }
-    [data-testid="stToolbar"],
-    [data-testid="stDecoration"],
-    [data-testid="stStatusWidget"],
-    [data-testid="stAppDeployButton"],
-    [data-testid="stViewerBadge"],
-    div[class*="viewerBadge"],
-    div[class*="styles_viewerBadge"],
-    a[href*="streamlit.io"],
-    a[href*="streamlit.app"] {
-        display: none !important;
-        visibility: hidden !important;
-    }
-    </style>
-    """
-    st.markdown(css_admin_clean, unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
 
-# Determine Mode Access
+# Tentukan mode akses
 if is_student_link:
     mode = "Halaman Ujian Siswa"
 else:
-    st.sidebar.title("📌 Navigation CBT")
+    st.sidebar.title("📌 Navigasi CBT")
     mode = st.sidebar.radio(
         "Pilih Mode Akses:", 
         ["Panel Guru (Admin CBT)", "Halaman Ujian Siswa"],
         index=0
     )
 
-# Active Exam Session Picker for Teachers
 if not is_student_link:
     st.sidebar.markdown("---")
     st.sidebar.subheader("🔑 Kode Sesi Ujian Guru")
@@ -180,21 +241,18 @@ if not is_student_link:
     selected_session = st.sidebar.text_input(
         "Kode Unik Ujian Anda:",
         value=url_session if url_session else "CBT-UTAMA",
-        help="Setiap guru dapat membuat Kode Unik Ujian sendiri (misal: MATEMATIKA-PAK-AHMAD, IPA-BU-RINA). Data antar guru terpisah 100% aman."
+        help="Setiap guru memiliki Kode Unik Ujian sendiri (misal: MAT-AHMAD, IPA-RINA)."
     ).strip().upper()
     
     if not selected_session:
         selected_session = "CBT-UTAMA"
         
     active_session_code, current_db = get_or_create_exam_session(selected_session)
-    
-    if existing_sessions:
-        st.sidebar.caption(f"📚 Sesi Ujian Tersimpan ({len(existing_sessions)}): `{', '.join(existing_sessions[:5])}`")
 else:
     active_session_code, current_db = get_or_create_exam_session(url_session)
 
 # ---------------------------------------------------------
-# HELPER FUNCTIONS: TOKEN, WORD PARSER, SCORING, GDRIVE
+# HELPER FUNCTIONS
 # ---------------------------------------------------------
 def generate_dynamic_token(secret_salt="TKA_SEKOLAH_SECRET"):
     interval_15m = int(time.time() // 900)
@@ -216,7 +274,7 @@ def get_active_token(db_identitas):
 @st.cache_data(show_spinner=False)
 def parse_word_soal_bytes(file_bytes):
     if not HAS_DOCX:
-        st.error("❌ Library `python-docx` belum terinstall di server. Pastikan `python-docx` ada di `requirements.txt`!")
+        st.error("❌ Library `python-docx` belum terinstall. Pastikan `python-docx` ada di `requirements.txt`!")
         return []
         
     doc = docx.Document(io.BytesIO(file_bytes))
@@ -362,7 +420,6 @@ def upload_ke_gdrive_guru(file_buffer, file_name, folder_id):
     except Exception as e:
         return False, str(e)
 
-# Initialize Session State Variables
 if 'current_siswa' not in st.session_state:
     st.session_state.current_siswa = None
 
@@ -374,7 +431,7 @@ if 'no_soal_aktif' not in st.session_state:
 # ---------------------------------------------------------
 if mode == "Panel Guru (Admin CBT)":
     st.title("⚙️ Panel Kelola & Pemantauan CBT Guru")
-    st.info(f"📍 **Kode Unik Ujian Aktif**: `{active_session_code}` | Data tersimpan otomatis & aman selamanya (tidak akan hilang walau ditutup).")
+    st.info(f"📍 **Kode Unik Ujian Aktif**: `{active_session_code}` | Data tersimpan otomatis & aman selamanya.")
     
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "1. Setting Ujian & Link", 
@@ -384,7 +441,6 @@ if mode == "Panel Guru (Admin CBT)":
         "5. Rekapitulasi Hasil"
     ])
     
-    # TAB 1: SETTING UJIAN & LINK UNIK
     with tab1:
         st.subheader("📋 Identitas Pelaksanaan Ujian")
         col1, col2 = st.columns(2)
@@ -424,8 +480,7 @@ if mode == "Panel Guru (Admin CBT)":
         current_db['identitas']['folder_id_gdrive'] = st.text_input(
             "Folder ID Google Drive Guru:",
             value=current_db['identitas'].get('folder_id_gdrive', ''),
-            placeholder="Contoh: 1a2B3c4D5e6F7g8H9i0J_kLmnOpQrStUv",
-            help="Masukkan kode unik folder Google Drive Anda. Hasil ujian siswa akan otomatis diunggah ke folder ini."
+            placeholder="Contoh: 1a2B3c4D5e6F7g8H9i0J_kLmnOpQrStUv"
         )
 
         save_current_state()
@@ -446,16 +501,14 @@ if mode == "Panel Guru (Admin CBT)":
             cur_token = get_active_token(current_db['identitas'])
             base_u = current_db['identitas']['base_url_app'].rstrip('/')
             
-            # LINK KHUSUS SISWA (Siswa TIDAK BISA melihat menu admin guru sama sekali)
             link_aktif_siswa = f"{base_u}/?session={active_session_code}&token={cur_token}&mode=siswa"
             
             st.success("🎉 **UJIAN SIAP DILAKSANAKAN!** Bagikan link khusus siswa di bawah ini:")
             st.code(link_aktif_siswa, language="text")
-            st.caption("🔒 Link di atas secara otomatis mengunci menu Administrasi Guru sehingga siswa hanya melihat halaman Ujian Siswa.")
+            st.caption("🔒 Link di atas mengunci total menu Administrasi Guru sehingga siswa hanya dapat membuka ruang ujian.")
         else:
             st.warning("⚠️ **Link Ujian Belum Aktif**: Harap unggah minimal 1 Bank Soal pada Tab 2 terlebih dahulu.")
 
-    # TAB 2: UPLOAD SOAL (WORD & EXCEL) & DAFTAR PESERTA
     with tab2:
         st.subheader("📤 Upload Bank Soal Multi-Mapel (Mendukung Word .docx & Excel .xlsx)")
         
@@ -497,8 +550,6 @@ if mode == "Panel Guru (Admin CBT)":
             
         st.markdown("---")
         st.subheader("👥 Upload / Isil Daftar Peserta Ujian (DPT Kroscek Nomor Peserta)")
-        st.caption("File Excel/CSV berisi kolom wajib: `No_Peserta`, `Nama`, `Mapel` (opsional), `Kelas` (opsional)")
-        
         file_siswa = st.file_uploader("Unggah File Daftar Siswa DPT:", type=['xlsx', 'csv'])
         if file_siswa is not None:
             try:
@@ -513,10 +564,8 @@ if mode == "Panel Guru (Admin CBT)":
             except Exception as e:
                 st.error(f"Gagal membaca daftar siswa: {e}")
 
-    # TAB 3: PEMANTAUAN REAL-TIME
     with tab3:
         st.subheader("📊 Monitoring Real-Time Peserta Ujian")
-        
         total_peserta = len(current_db['daftar_siswa']) if current_db['daftar_siswa'] else len(current_db['sesi_siswa'])
         login_count = len(current_db['sesi_siswa'])
         
@@ -553,11 +602,8 @@ if mode == "Panel Guru (Admin CBT)":
         else:
             st.info("Belum ada siswa yang login ke ruang ujian.")
 
-    # TAB 4: RESET UJIAN
     with tab4:
         st.subheader("🔄 Menu Reset Ujian (Per Siswa / Per Kelas)")
-        st.warning("Gunakan fitur ini jika siswa mengalami kendala PC / mati listrik / eror jaringan saat ujian.")
-        
         col_r1, col_r2 = st.columns(2)
         with col_r1:
             st.markdown("#### 👤 Reset Ujian Per Siswa")
@@ -566,20 +612,19 @@ if mode == "Panel Guru (Admin CBT)":
                 if st.button("🔴 Reset Ujian Siswa Ini", type="secondary"):
                     del current_db['sesi_siswa'][pilih_siswa_reset]
                     save_current_state()
-                    st.success(f"Sesi ujian siswa {pilih_siswa_reset} telah di-reset. Siswa dapat login kembali!")
+                    st.success(f"Sesi ujian siswa {pilih_siswa_reset} telah di-reset.")
                     st.rerun()
             else:
                 st.write("Tidak ada sesi siswa aktif.")
                 
         with col_r2:
-            st.markdown("#### 🏫 Reset Seluruh Ujian (Per Sesi / Per Kelas)")
+            st.markdown("#### 🏫 Reset Seluruh Ujian")
             if st.button("🚨 RESET SEMUA SISWA & SESI", type="primary"):
                 current_db['sesi_siswa'] = {}
                 save_current_state()
                 st.success("Semua data sesi ujian siswa berhasil di-reset bersih!")
                 st.rerun()
 
-    # TAB 5: REKAPITULASI HASIL
     with tab5:
         st.subheader("📥 Unduh Rekapitulasi Nilai Ujian (Excel)")
         if current_db['sesi_siswa']:
@@ -619,31 +664,34 @@ if mode == "Panel Guru (Admin CBT)":
                 else:
                     output.seek(0)
                     nama_file_excel = f"Hasil_Ujian_{current_db['identitas']['judul_ujian']}_{active_session_code}.xlsx"
-                    with st.spinner("Sedang mengunggah hasil ujian ke Google Drive Anda..."):
+                    with st.spinner("Sedang mengunggah hasil ujian ke Google Drive..."):
                         berhasil, pesan = upload_ke_gdrive_guru(output, nama_file_excel, folder_id)
                         if berhasil:
-                            st.success(f"✅ Berhasil disimpan ke Google Drive Anda! (File ID: {pesan})")
+                            st.success(f"✅ Berhasil disimpan ke Google Drive! (File ID: {pesan})")
                         else:
                             st.error(f"❌ Gagal mengunggah: {pesan}")
         else:
             st.info("Belum ada data nilai hasil ujian yang dapat diunduh.")
 
 # ---------------------------------------------------------
-# MODE 2: HALAMAN UJIAN SISWA (CBT INTERFACE ALA TKA)
+# MODE 2: HALAMAN UJIAN SISWA (TAMPILAN EXCLUSIF TKA)
 # ---------------------------------------------------------
 else:
     if not current_db['bank_soal_mapel']:
-        st.error(f"⚠️ Ujian belum siap! Bank soal untuk sesi ujian `{active_session_code}` belum diunggah oleh Guru/Admin CBT.")
+        st.error(f"⚠️ Ujian belum siap! Bank soal untuk sesi `{active_session_code}` belum diunggah oleh Guru.")
         st.stop()
         
     identitas = current_db['identitas']
     
     # LOGIN SISWA
     if not st.session_state.current_siswa:
-        st.title("📝 Portal Ujian Online CBT - TKA")
-        st.markdown(f"### {identitas['nama_sekolah']}")
-        st.write(f"**Judul Ujian**: {identitas['judul_ujian']} | **Durasi**: {identitas['durasi_menit']} Menit")
-        st.markdown("---")
+        # Header TKA Asli
+        st.markdown(f"""
+        <div style="background-color: #1E3A8A; padding: 18px 25px; border-radius: 8px; margin-bottom: 20px;">
+            <div class="tka-instansi-title">{identitas['nama_sekolah']}</div>
+            <div class="tka-exam-sub">{identitas['judul_ujian']} | Durasi: {identitas['durasi_menit']} Menit</div>
+        </div>
+        """, unsafe_allow_html=True)
         
         with st.form("form_login_siswa"):
             st.subheader("🔑 Konfirmasi Identitas Peserta Ujian")
@@ -700,7 +748,7 @@ else:
                         st.success("Login Berhasil! Mengalihkan ke ruang ujian...")
                         st.rerun()
 
-    # AREA KERJA UJIAN SISWA
+    # AREA KERJA UJIAN SISWA (RUANG UJIAN TKA HASIL REFINEMENT)
     else:
         id_siswa = st.session_state.current_siswa
         sesi = current_db['sesi_siswa'].get(id_siswa)
@@ -720,40 +768,61 @@ else:
                 st.rerun()
             st.stop()
             
-        js_anti_cheat = """
+        # JS ANTI-CHEAT + KEYBOARD LISTENER UNTUK HAK JAWABAN TEKAN A, B, C, D, E
+        js_keyboard_and_security = """
         <script>
+        // Disable Right Click & Inspect
         document.addEventListener('contextmenu', event => event.preventDefault());
         document.addEventListener('keydown', function(e) {
             if (e.ctrlKey && (e.key === 'c' || e.key === 'v' || e.key === 'u' || e.key === 'a')) {
                 e.preventDefault();
             }
         });
+        
+        // Anti Cheat Tab Switching Warning
         document.addEventListener("visibilitychange", function() {
             if (document.hidden) {
                 alert("⚠️ PERINGATAN KECURANGAN: Anda terdeteksi meninggalkan layar ujian! Kejadian ini dicatat oleh pengawas.");
             }
         });
+
+        // KEYBOARD LISTENER: Tekan Huruf A, B, C, D, atau E untuk memilih Opsi
+        document.addEventListener('keyup', function(event) {
+            const key = event.key.toUpperCase();
+            if (['A', 'B', 'C', 'D', 'E'].includes(key)) {
+                // Cari radio input yang sesuai dengan opsi A, B, C, D, E
+                const radioInputs = document.querySelectorAll('input[type="radio"]');
+                if (key === 'A' && radioInputs[0]) { radioInputs[0].click(); }
+                else if (key === 'B' && radioInputs[1]) { radioInputs[1].click(); }
+                else if (key === 'C' && radioInputs[2]) { radioInputs[2].click(); }
+                else if (key === 'D' && radioInputs[3]) { radioInputs[3].click(); }
+                else if (key === 'E' && radioInputs[4]) { radioInputs[4].click(); }
+            }
+        });
         </script>
         """
-        st.components.v1.html(js_anti_cheat, height=0)
+        st.components.v1.html(js_keyboard_and_security, height=0)
         
         mapel_siswa = sesi.get('mapel', '')
+        
+        # HEADER BAR RUANG UJIAN ALA TKA (Font Arial 18pt Nama Instansi)
         st.markdown(f"""
-        <div style="background-color: #1F4E78; padding: 12px 20px; border-radius: 8px; color: white; margin-bottom: 15px;">
+        <div style="background-color: #1E3A8A; padding: 14px 22px; border-radius: 6px; color: white; margin-bottom: 15px;">
             <div style="display: flex; justify-content: space-between; align-items: center;">
                 <div>
-                    <h3 style="margin: 0; color: white;">{identitas['nama_sekolah']} - {mapel_siswa}</h3>
-                    <small>{identitas['judul_ujian']} | Peserta: <b>{sesi['nama']} ({sesi['no_peserta']})</b></small>
+                    <div class="tka-instansi-title">{identitas['nama_sekolah']}</div>
+                    <div class="tka-exam-sub">{identitas['judul_ujian']} ({mapel_siswa}) | Peserta: <b>{sesi['nama']} ({sesi['no_peserta']})</b></div>
                 </div>
-                <div style="text-align: right; background-color: #d9534f; padding: 6px 15px; border-radius: 5px;">
-                    <span style="font-size: 12px; display:block;">SISA WAKTU</span>
-                    <strong style="font-size: 18px;">⏱️ {identitas['durasi_menit']}:00 Min</strong>
+                <div style="text-align: right; background-color: #DC2626; padding: 6px 16px; border-radius: 6px;">
+                    <span style="font-size: 10pt; font-family: Arial, sans-serif; display:block; color: #FFFFFF;">SISA WAKTU</span>
+                    <strong style="font-size: 16pt; font-family: Arial, sans-serif; color: #FFFFFF;">⏱️ {identitas['durasi_menit']}:00 Min</strong>
                 </div>
             </div>
         </div>
         """, unsafe_allow_html=True)
         
-        col_left, col_right = st.columns([3, 1])
+        # PROPORSIONAL GRID: Left Side (78% Soal & Opsi) | Right Side (22% Navigation Grid)
+        col_left, col_right = st.columns([3.5, 1.1])
         
         soal_list = current_db['bank_soal_mapel'].get(mapel_siswa, [])
         total_soal = len(soal_list)
@@ -771,32 +840,41 @@ else:
         tipe = soal.get('Tipe_Soal', 'PG_STANDAR')
         
         with col_left:
-            st.markdown(f"#### Soal Nomor {curr_idx + 1} / {total_soal}  `[{tipe}]`")
+            # Container Soal TKA
+            st.markdown(f"""
+            <div style="font-family: Arial, sans-serif; font-size: 11pt; font-weight: bold; color: #1E3A8A; margin-bottom: 10px;">
+                SOAL NOMOR {curr_idx + 1} / {total_soal} &nbsp;<span style="font-size: 9pt; background-color: #E2E8F0; padding: 2px 8px; border-radius: 4px; color: #334155;">[{tipe}]</span>
+            </div>
+            """, unsafe_allow_html=True)
             
             if pd.notna(soal.get('Media_Gambar')) and str(soal.get('Media_Gambar')).strip() != '':
                 st.info(f"🖼️ Media Gambar / Grafik Attached: `{soal.get('Media_Gambar')}`")
                 
+            # Stimulus Teks (Arial 12pt)
             if pd.notna(soal.get('Stimulus_Teks')) and str(soal.get('Stimulus_Teks')).strip() != '':
                 st.markdown(f"""
-                <div style="background-color: #F8F9FA; padding: 15px; border-left: 4px solid #1F4E78; margin-bottom: 15px; border-radius: 4px;">
+                <div class="tka-stimulus-box">
                     {soal.get('Stimulus_Teks')}
                 </div>
                 """, unsafe_allow_html=True)
                 
-            st.write(f"**{soal.get('Soal_Utama', '')}**")
+            # Soal Utama (Arial 12pt Bold)
+            st.markdown(f"""
+            <div class="tka-soal-text">
+                {soal.get('Soal_Utama', '')}
+            </div>
+            """, unsafe_allow_html=True)
             
             curr_ans = sesi['jawaban'].get(curr_idx, None)
             
             if tipe in ['PG_STANDAR', 'PG_KOMPLEKS_ASOSIASI', 'SEBAB_AKIBAT']:
                 if tipe == 'PG_KOMPLEKS_ASOSIASI':
-                    st.write("---")
                     st.write("Daftar Pernyataan:")
                     for i in range(1, 5):
                         p_val = soal.get(f'Pernyataan_{i}') or soal.get(f'Pernyataan_{i}_atau_Sebab') or soal.get(f'Pernyataan_{i}_atau_Akibat')
                         if pd.notna(p_val) and str(p_val).strip() != '':
                             st.write(f"• {p_val}")
                 elif tipe == 'SEBAB_AKIBAT':
-                    st.write("---")
                     st.write(f"**Pernyataan**: {soal.get('Pernyataan_1_atau_Sebab', '')}")
                     st.write(f"**Alasan (SEBAB)**: {soal.get('Pernyataan_2_atau_Akibat', '')}")
                     
@@ -810,12 +888,16 @@ else:
                 }
                 
                 def_index = opsi_choices.index(curr_ans) if curr_ans in opsi_choices else None
+                
+                st.caption("💡 *Petunjuk: Anda bisa mengklik langsung opsi di bawah atau menekan tombol A, B, C, D, E pada keyboard.*")
+                
                 jawaban_user = st.radio(
-                    "Pilih Jawaban Anda (Bisa Klik Opsi / Tekan Keyboard A, B, C, D, E):",
+                    "Pilih Jawaban Anda:",
                     opsi_choices,
                     format_func=lambda x: opsi_labels[x],
                     index=def_index,
-                    key=f"radio_soal_{curr_idx}"
+                    key=f"radio_soal_{curr_idx}",
+                    label_visibility="collapsed"
                 )
                 if jawaban_user:
                     sesi['jawaban'][curr_idx] = jawaban_user
@@ -849,33 +931,41 @@ else:
                 save_current_state()
 
             st.markdown("---")
-            nav_col1, nav_col2, nav_col3 = st.columns([1, 1, 1])
+            # FOOTER BAR TOMBOL KETERANGAN SOAL (Font Arial 10pt)
+            nav_col1, nav_col2, nav_col3 = st.columns([1.2, 1, 1.2])
             with nav_col1:
-                if st.button("⬅️ Soal Sebelumnya", disabled=(curr_idx == 0)):
+                if st.button("⬅️ SOAL SEBELUMNYA", disabled=(curr_idx == 0), use_container_width=True):
                     st.session_state.no_soal_aktif -= 1
                     st.rerun()
             with nav_col2:
                 is_ragu = sesi['ragu'].get(curr_idx, False)
-                if st.checkbox("🟨 Ragu-Ragu", value=is_ragu, key=f"ragu_{curr_idx}"):
+                if st.checkbox("🟨 RAGU-RAGU", value=is_ragu, key=f"ragu_{curr_idx}"):
                     sesi['ragu'][curr_idx] = True
                 else:
                     sesi['ragu'][curr_idx] = False
                 save_current_state()
             with nav_col3:
                 if curr_idx < total_soal - 1:
-                    if st.button("Soal Berikutnya ➡️", type="primary"):
+                    if st.button("SOAL BERIKUTNYA ➡️", type="primary", use_container_width=True):
                         st.session_state.no_soal_aktif += 1
                         st.rerun()
                 else:
-                    if st.button("🏁 SELESAI & SIMPAN UJIAN", type="primary"):
+                    if st.button("🏁 SELESAI & SIMPAN UJIAN", type="primary", use_container_width=True):
                         sesi['status'] = 'Selesai'
                         hitung_skor_siswa(id_siswa, current_db)
                         save_current_state()
                         st.rerun()
 
-        # KISI-KISI NOMOR SOAL
+        # KOTAK PENANDA SOAL SEBELAH KANAN (KISI-KISI NOMOR SOAL FONT ARIAL 10pt)
         with col_right:
-            st.markdown("### 🔲 Kisi-Kisi Soal")
+            st.markdown("""
+            <div style="background-color: #FFFFFF; padding: 12px; border: 1px solid #CBD5E1; border-radius: 6px; margin-bottom: 15px;">
+                <div style="font-family: Arial, sans-serif; font-size: 10pt; font-weight: bold; color: #1E3A8A; margin-bottom: 10px; text-align: center;">
+                    🔲 NAVIGASI NOMOR SOAL
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            
             cols_grid = st.columns(4)
             for i in range(total_soal):
                 is_ans = is_jawaban_terjawab(sesi['jawaban'].get(i))
@@ -888,12 +978,13 @@ else:
                     label_num += " 🟢"
                     
                 with cols_grid[i % 4]:
-                    if st.button(label_num, key=f"grid_btn_{i}"):
+                    if st.button(label_num, key=f"grid_btn_{i}", use_container_width=True):
                         st.session_state.no_soal_aktif = i
                         st.rerun()
                         
             st.markdown("""
-            <div style="font-size: 11px; margin-top: 15px;">
+            <div style="font-family: Arial, sans-serif; font-size: 10pt; color: #475569; margin-top: 15px; background-color: #FFFFFF; padding: 10px; border-radius: 6px; border: 1px solid #E2E8F0;">
+                <b>Keterangan:</b><br>
                 🟢 : Sudah Dijawab<br>
                 🟨 : Ragu-Ragu<br>
                 ⚪ : Belum Dijawab
